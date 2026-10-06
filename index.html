@@ -1,0 +1,99 @@
+from vpython import *
+import random
+
+# ---------- Настройки ----------
+DISTANCE = 30      # расстояние от сверхновой до Земли (условные единицы)
+EARTH_R = 1.5      # радиус Земли
+SHELL_SPEED = 14   # скорость ударной волны
+N_RAYS = 80        # количество гамма-лучей
+
+scene = canvas(title="Сверхновая уничтожает Землю", width=1000, height=600,
+               background=color.black)
+scene.range = 22
+scene.center = vector(DISTANCE / 2, 0, 0)
+scene.forward = vector(0, -0.3, -1)
+
+# ---------- Звёздный фон ----------
+for _ in range(250):
+    sphere(pos=vector(random.uniform(-40, 70), random.uniform(-30, 30),
+                      random.uniform(-45, -15)),
+           radius=0.08, color=color.white, emissive=True)
+
+# ---------- Объекты ----------
+star = sphere(pos=vector(0, 0, 0), radius=2, color=color.orange, emissive=True)
+local_light(pos=star.pos, color=color.white)
+earth = sphere(pos=vector(DISTANCE, 0, 0), radius=EARTH_R, texture=textures.earth)
+
+txt = label(pos=vector(DISTANCE / 2, 12, 0), text="Звезда нестабильна...",
+            height=20, color=color.white, box=False)
+
+# ---------- Фаза 1: звезда раздувается ----------
+for i in range(150):
+    rate(60)
+    star.radius += 0.01
+    star.color = vector(1, max(0.1, 1 - i / 150), 0.2)
+
+# ---------- Фаза 2: взрыв ----------
+txt.text = "СВЕРХНОВАЯ!"
+star.visible = False
+flash = sphere(pos=vector(0, 0, 0), radius=3, color=color.white,
+               emissive=True, opacity=1)
+shell = sphere(pos=vector(0, 0, 0), radius=3.5, color=color.cyan,
+               emissive=True, opacity=0.25)
+
+rays = []
+for _ in range(N_RAYS):
+    d = vector(1, random.uniform(-0.1, 0.1), random.uniform(-0.1, 0.1)).norm()
+    r = sphere(pos=d * 3.5, radius=0.12, color=color.magenta,
+               emissive=True, make_trail=True, retain=12)
+    r.v = d * random.uniform(SHELL_SPEED, SHELL_SPEED + 4)
+    rays.append(r)
+
+# ---------- Основной цикл ----------
+dt = 0.01
+t = 0
+burn = 0
+exploded = False
+frags = []
+
+while t < 14:
+    rate(100)
+    t += dt
+
+    # ударная волна и вспышка
+    shell.radius += SHELL_SPEED * dt
+    if flash.visible:
+        flash.radius += 20 * dt
+        flash.opacity -= 1.5 * dt
+        if flash.opacity <= 0:
+            flash.visible = False
+
+    # гамма-лучи летят к Земле
+    for r in rays:
+        if r.visible:
+            r.pos += r.v * dt
+            if r.pos.x >= earth.pos.x - EARTH_R:
+                r.clear_trail()
+                r.visible = False
+
+    # Земля обгорает, когда достигнута волной
+    if not exploded and shell.radius >= earth.pos.x - EARTH_R:
+        burn += dt
+        k = max(0, 1 - burn)
+        earth.color = vector(1, k, k)
+        txt.text = "Гамма-излучение достигло Земли..."
+
+        if burn > 1.5:
+            exploded = True
+            earth.visible = False
+            for _ in range(70):
+                f = sphere(pos=earth.pos + vector.random() * EARTH_R * 0.5,
+                           radius=random.uniform(0.1, 0.3),
+                           color=vector(random.uniform(0.6, 1), random.uniform(0.1, 0.4), 0))
+                f.v = vector.random() * random.uniform(2, 8) + vector(4, 0, 0)
+                frags.append(f)
+            txt.text = "ЗЕМЛЯ УНИЧТОЖЕНА"
+            txt.color = color.red
+
+    for f in frags:
+        f.pos += f.v * dt
